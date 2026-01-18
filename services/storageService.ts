@@ -15,7 +15,8 @@ const DEFAULT_TAGS = ['Relaxation', 'Stress Relief', 'Imagination', 'Toy', 'Visu
 export const StorageService = {
   
   getLanguage: (): Language => {
-    return (localStorage.getItem(KEYS.LANGUAGE) as Language) || 'en';
+    // Default to 'zh' (Chinese) if not set
+    return (localStorage.getItem(KEYS.LANGUAGE) as Language) || 'zh';
   },
 
   setLanguage: (lang: Language) => {

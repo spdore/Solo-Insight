@@ -389,7 +389,7 @@ export const LogModal: React.FC<LogModalProps> = ({ isOpen, onClose, onSave, all
   const isNextDisabled = step === 1 && mode === 'NOW' && (timerRunning || duration === 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm pointer-events-auto transition-opacity duration-300" onClick={onClose} />
       
       {/* 

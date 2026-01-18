@@ -1,4 +1,5 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { createPortal } from 'react-dom';
 import { ContentItem, Language } from '../services/types';
 import { StorageService } from '../services/storageService';
 import { Search, Plus, Star, Link as LinkIcon, User, ExternalLink, X, Save, FileText, Pencil, Play } from 'lucide-react';
@@ -160,7 +161,7 @@ export const Library = forwardRef<LibraryRef, LibraryProps>(({ items, onUpdate, 
             ) : (
                 filteredItems.map(item => (
                     <SwipeableEntry key={item.id} onDelete={() => deleteItem(item.id)}>
-                        <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center gap-3 group hover:border-slate-700 transition-all relative overflow-hidden">
+                        <div className="bg-slate-900/50 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-4 group relative backdrop-blur-md hover:bg-slate-800/60 transition-colors">
                             {/* Left Content Area */}
                             <div className="flex-1 min-w-0">
                                 {/* Header: Title & Actor */}
@@ -227,8 +228,8 @@ export const Library = forwardRef<LibraryRef, LibraryProps>(({ items, onUpdate, 
         </div>
       </div>
 
-      {/* Add/Edit Item Modal Card */}
-      {isModalOpen && (
+      {/* Add/Edit Item Modal Card - Rendered via Portal to break out of containers */}
+      {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none">
             <div 
                 className="absolute inset-0 bg-slate-950/40 backdrop-blur-xl pointer-events-auto transition-all duration-500 animate-in fade-in" 
@@ -304,7 +305,8 @@ export const Library = forwardRef<LibraryRef, LibraryProps>(({ items, onUpdate, 
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FirebaseService } from '../services/firebase';
-import { Mail, Lock, LogIn, Chrome, Ghost, AlertCircle, ArrowRight } from 'lucide-react';
+import { StorageService } from '../services/storageService';
+import { translations } from '../utils/translations';
+import { Language } from '../services/types';
+import { Mail, Lock, LogIn, Chrome, Ghost, AlertCircle, ArrowRight, Globe } from 'lucide-react';
 
 export const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -8,6 +11,20 @@ export const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lang, setLang] = useState<Language>('zh');
+
+  // Load language preference
+  useEffect(() => {
+    setLang(StorageService.getLanguage());
+  }, []);
+
+  const t = translations[lang];
+
+  const toggleLanguage = () => {
+    const newLang = lang === 'en' ? 'zh' : 'en';
+    setLang(newLang);
+    StorageService.setLanguage(newLang);
+  };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +75,15 @@ export const Login = () => {
         <div className="absolute bottom-[-10%] left-[20%] w-[50vw] h-[50vw] bg-cyan-600/20 rounded-full blur-[100px] animate-blob animation-delay-4000"></div>
       </div>
 
+      {/* Language Switcher (Top Right) */}
+      <button 
+        onClick={toggleLanguage}
+        className="absolute top-6 right-6 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/50 backdrop-blur-md border border-slate-800 text-slate-400 hover:text-white transition-all"
+      >
+        <Globe size={14} />
+        <span className="text-xs font-bold uppercase">{lang === 'zh' ? '中文' : 'EN'}</span>
+      </button>
+
       {/* Login Card - Frosted Glass */}
       <div className="relative z-10 w-full max-w-md p-8 mx-4">
         <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl"></div>
@@ -66,10 +92,10 @@ export const Login = () => {
             {/* Header */}
             <div className="mb-8 text-center">
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent tracking-tight">
-                    Solo Insight
+                    {t.login_title}
                 </h1>
                 <p className="text-slate-400 text-sm mt-2 font-medium tracking-wide uppercase">
-                    Private Journey Tracker
+                    {t.login_subtitle}
                 </p>
             </div>
 
@@ -88,7 +114,7 @@ export const Login = () => {
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                         <input 
                             type="email" 
-                            placeholder="Email address"
+                            placeholder={t.email_placeholder}
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
@@ -101,7 +127,7 @@ export const Login = () => {
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                         <input 
                             type="password" 
-                            placeholder="Password"
+                            placeholder={t.password_placeholder}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
@@ -120,7 +146,7 @@ export const Login = () => {
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     ) : (
                         <>
-                            {isLogin ? 'Sign In' : 'Create Account'}
+                            {isLogin ? t.sign_in : t.create_account}
                             <ArrowRight size={18} />
                         </>
                     )}
@@ -128,19 +154,19 @@ export const Login = () => {
             </form>
 
             <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
-                <span>{isLogin ? "New here?" : "Already have an account?"}</span>
+                <span>{isLogin ? t.new_here : t.already_have_account}</span>
                 <button 
                     onClick={() => { setIsLogin(!isLogin); setError(''); }}
                     className="text-violet-400 hover:text-violet-300 font-bold transition-colors"
                 >
-                    {isLogin ? "Sign up" : "Log in"}
+                    {isLogin ? t.sign_up : t.log_in}
                 </button>
             </div>
 
             {/* Divider */}
             <div className="w-full flex items-center gap-4 my-8">
                 <div className="flex-1 h-px bg-slate-800"></div>
-                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Or continue with</span>
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{t.or_continue_with}</span>
                 <div className="flex-1 h-px bg-slate-800"></div>
             </div>
 
@@ -151,14 +177,14 @@ export const Login = () => {
                     className="flex items-center justify-center gap-2 bg-white text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors shadow-lg shadow-white/5 active:scale-[0.98]"
                 >
                     <Chrome size={18} />
-                    Google
+                    {t.google_login}
                 </button>
                 <button 
                     onClick={handleAnon}
                     className="flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 text-slate-300 font-bold py-3 rounded-xl hover:bg-slate-700 hover:text-white transition-colors active:scale-[0.98]"
                 >
                     <Ghost size={18} />
-                    Anonymous
+                    {t.anon_login}
                 </button>
             </div>
         </div>

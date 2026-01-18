@@ -164,10 +164,6 @@ export default function App() {
     setEntries(newEntries); // Optimistic update
     saveDataToCloud('entries', newEntries);
     
-    // Refresh library derived from state
-    // Note: libraryItems state update handled via Firebase listener usually, 
-    // but for immediate UI feedback we might need to handle library explicitly if changed in LogModal
-    
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 2000);
   };
@@ -217,7 +213,7 @@ export default function App() {
   // Helper to translate tags
   const getTranslatedTag = (tag: string) => {
     const key = `tag_${tag.replace(/\s+/g, '_')}` as keyof typeof t;
-    return t[key] || tag;
+    return (t as any)[key] || tag;
   };
 
   // Stats Calculations
@@ -408,7 +404,7 @@ export default function App() {
       </header>
       
       {/* Monthly Highlights Row */}
-      <div className="grid grid-cols-3 gap-3 animate-slide-up" style={{animationDelay: '0.05s'}}>
+      <div className="grid grid-cols-3 gap-3">
           <div className="bg-slate-900/50 p-3 rounded-2xl border border-slate-800 flex flex-col items-center justify-center backdrop-blur-md">
               <span className="text-[10px] uppercase text-slate-500 font-bold tracking-wider mb-1">{t.sessions}</span>
               <span className="text-xl font-light text-white">{monthStats.totalSessions}</span>
@@ -437,13 +433,13 @@ export default function App() {
 
       {/* Monthly Log List */}
       {!selectedDay && (
-          <div className="flex-1 animate-slide-up space-y-4" style={{animationDelay: '0.1s'}}>
+          <div className="flex-1 space-y-4">
              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-1 mt-2">
                  {format(currentDate, 'MMMM', { locale: dateLocale })} {t.log_suffix}
              </h3>
              {monthStats.entries.length === 0 ? (
                  <div className="text-center py-10 opacity-50">
-                     <p className="text-slate-500 text-sm">No activity recorded this month.</p>
+                     <p className="text-slate-500 text-sm">{t.no_activity_month}</p>
                  </div>
              ) : (
                  <div className="space-y-3 pb-20">
@@ -548,11 +544,11 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] w-full flex justify-center bg-black">
-        {/* Global Background Orbs - Enhanced */}
-        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden max-w-md mx-auto">
-            <div className="absolute top-[-20%] left-[-20%] w-[70%] h-[70%] bg-violet-600/20 rounded-full blur-[120px] animate-blob mix-blend-screen"></div>
-            <div className="absolute top-[30%] right-[-20%] w-[60%] h-[60%] bg-fuchsia-600/20 rounded-full blur-[120px] animate-blob animation-delay-2000 mix-blend-screen"></div>
-            <div className="absolute bottom-[-10%] left-[20%] w-[70%] h-[70%] bg-cyan-600/20 rounded-full blur-[120px] animate-blob animation-delay-4000 mix-blend-screen"></div>
+        {/* Global Background Orbs - Always enabled */}
+        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+            <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] bg-violet-600/20 rounded-full blur-[100px] animate-blob mix-blend-screen"></div>
+            <div className="absolute top-[40%] right-[-10%] w-[40vw] h-[40vw] bg-fuchsia-600/20 rounded-full blur-[100px] animate-blob animation-delay-2000 mix-blend-screen"></div>
+            <div className="absolute bottom-[-10%] left-[20%] w-[50vw] h-[50vw] bg-cyan-600/20 rounded-full blur-[100px] animate-blob animation-delay-4000 mix-blend-screen"></div>
         </div>
 
         <div className="w-full max-w-md bg-slate-950/90 relative flex flex-col shadow-2xl h-full z-10 backdrop-blur-sm">
@@ -593,8 +589,8 @@ export default function App() {
         </main>
 
         {/* Bottom Navigation */}
-        <nav className="absolute bottom-0 left-0 right-0 bg-slate-950/80 backdrop-blur-xl border-t border-slate-800 px-2 py-1 z-50 h-20">
-            <div className="grid grid-cols-5 items-center h-full relative">
+        <nav className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#020617] via-[#020617]/90 to-transparent px-2 py-1 z-50 h-24 flex items-end pb-2">
+            <div className="grid grid-cols-5 items-center w-full relative">
                 <button 
                     onClick={() => { setView('DASHBOARD'); setSelectedDay(null); }}
                     className={`flex flex-col items-center gap-1 py-2 transition-all duration-300 rounded-xl ${view === 'DASHBOARD' ? 'text-violet-400' : 'text-slate-600 hover:text-slate-400'}`}
@@ -611,7 +607,7 @@ export default function App() {
                     <span className={view === 'CALENDAR' ? 'opacity-100 font-bold text-[10px]' : 'opacity-70 text-[10px]'}>{t.nav_history}</span>
                 </button>
                 
-                <div className="relative -top-6 flex justify-center">
+                <div className="relative -top-8 flex justify-center">
                     <button
                         onClick={handleCentralButtonClick}
                         className="w-14 h-14 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-full shadow-[0_4px_20px_rgba(124,58,237,0.5)] flex items-center justify-center text-white hover:scale-110 active:scale-95 transition-all border border-violet-400/30 group z-50"

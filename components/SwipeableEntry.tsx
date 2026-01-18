@@ -62,11 +62,11 @@ export const SwipeableEntry: React.FC<SwipeableEntryProps> = ({ children, onDele
   return (
     <div className={`relative select-none ${className}`}>
       {/* Background Layer (Trash Icons) */}
-      <div className="absolute inset-0 flex items-center justify-between px-6 rounded-2xl bg-red-950/30 border border-red-900/50">
-        <div style={{ opacity: offsetX > 0 ? iconOpacity : 0 }} className="flex items-center gap-2 text-red-400 transition-opacity">
+      <div className="absolute inset-0 flex items-center justify-between px-6 rounded-2xl bg-slate-950/80 border border-slate-800">
+        <div style={{ opacity: offsetX > 0 ? iconOpacity : 0 }} className="flex items-center gap-2 text-red-500 transition-opacity">
             <Trash2 size={20} />
         </div>
-        <div style={{ opacity: offsetX < 0 ? iconOpacity : 0 }} className="flex items-center gap-2 text-red-400 transition-opacity">
+        <div style={{ opacity: offsetX < 0 ? iconOpacity : 0 }} className="flex items-center gap-2 text-red-500 transition-opacity">
             <Trash2 size={20} />
         </div>
       </div>

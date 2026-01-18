@@ -1,105 +1,122 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as firebaseSignOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { 
+  getAuth, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut as firebaseSignOut, 
+  onAuthStateChanged, 
+  User,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInAnonymously as firebaseSignInAnonymously
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  updateDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
 import { Entry, ContentItem, SavedInsight, AiAccessState } from '../types';
 
-// TODO: REPLACE WITH YOUR FIREBASE CONFIGURATION
-// Go to Firebase Console -> Project Settings -> General -> Your apps -> SDK setup and configuration
+// Updated configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyAxHBOxB7aPlvzcRjqag3hxXiYbHJcwRKs",
-  authDomain: "solo-insight-4f8aa.firebaseapp.com",
-  projectId: "solo-insight-4f8aa",
-  storageBucket: "solo-insight-4f8aa.firebasestorage.app",
-  messagingSenderId: "564943929532",
-  appId: "1:564943929532:web:0864e35b990c40c60cd0b9",
-  measurementId: "G-Y5W9SERQ9R"
+  apiKey: "AIzaSyATLYZAbzFnwry9BLV9zEnbs8ZlXl790OU",
+  authDomain: "soloinsightv1.firebaseapp.com",
+  projectId: "soloinsightv1",
+  storageBucket: "soloinsightv1.firebasestorage.app",
+  messagingSenderId: "619553909754",
+  appId: "1:619553909754:web:fed30ff28d6ee510c4d243",
+  measurementId: "G-CL3HFK8PTH"
 };
 
-// Initialize only if config is valid (prevent crash during dev before config)
-let app, auth, db;
-try {
-    if (firebaseConfig.apiKey !== "YOUR_API_KEY_HERE") {
-        app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-    }
-} catch (e) {
-    console.warn("Firebase initialization failed. Check config.", e);
-}
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const googleProvider = new GoogleAuthProvider();
 
 export const FirebaseService = {
   auth,
   db,
+
+  // --- Auth Methods ---
   
-  signIn: async () => {
-    if (!auth) throw new Error("Firebase not configured");
-    const provider = new GoogleAuthProvider();
-    return signInWithPopup(auth, provider);
+  signUp: async (email, password) => {
+    return createUserWithEmailAndPassword(auth, email, password);
+  },
+
+  signIn: async (email, password) => {
+    return signInWithEmailAndPassword(auth, email, password);
+  },
+
+  signInWithGoogle: async () => {
+    return signInWithPopup(auth, googleProvider);
+  },
+
+  signInAnonymously: async () => {
+    return firebaseSignInAnonymously(auth);
   },
 
   signOut: async () => {
-    if (!auth) return;
     return firebaseSignOut(auth);
   },
 
-  // One-time sync: Upload local data to cloud on first login
-  mergeLocalData: async (userId: string, localData: any) => {
-    if (!db) return;
+  observeAuth: (callback: (user: User | null) => void) => {
+    return onAuthStateChanged(auth, callback);
+  },
+
+  // --- Data Sync Methods ---
+
+  // Initialize User Document if it doesn't exist
+  initUserDoc: async (userId: string) => {
     const userRef = doc(db, 'users', userId);
-    
-    // Check if cloud data exists
     const docSnap = await getDoc(userRef);
     
     if (!docSnap.exists()) {
-        // First time user, upload everything
-        await setDoc(userRef, {
-            entries: localData.entries || [],
-            tags: localData.tags || [],
-            library: localData.library || [],
-            insights: localData.insights || [],
-            achievements: localData.achievements || {},
-            aiAccess: localData.aiAccess || { unlocked: false, attempts: 0 },
-            createdAt: Date.now()
-        });
-        return true; // Data uploaded
+      await setDoc(userRef, {
+        entries: [],
+        tags: [],
+        library: [],
+        insights: [],
+        achievements: {},
+        aiAccess: { unlocked: false, attempts: 0 },
+        createdAt: Date.now()
+      });
+      return true; // Created new
     }
-    return false; // User already had cloud data, didn't overwrite with local
+    return false; // Existed
   },
 
-  // Save specific collections
-  saveEntry: async (userId: string, entries: Entry[]) => {
-    if (!db) return;
+  // Real-time listener for user data
+  subscribeToUserData: (userId: string, callback: (data: any) => void) => {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { entries });
+    return onSnapshot(userRef, (doc) => {
+      if (doc.exists()) {
+        callback(doc.data());
+      }
+    });
   },
 
-  saveTags: async (userId: string, tags: string[]) => {
-    if (!db) return;
+  // Overwrite specific fields in Firestore
+  updateUserField: async (userId: string, field: string, data: any) => {
+    if (!userId) return;
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { tags });
+    await updateDoc(userRef, {
+      [field]: data
+    });
   },
 
-  saveLibrary: async (userId: string, library: ContentItem[]) => {
-    if (!db) return;
+  // Helper to sync all local data to cloud (e.g. after first signup)
+  syncLocalToCloud: async (userId: string, localData: any) => {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { library });
-  },
-  
-  saveInsights: async (userId: string, insights: SavedInsight[]) => {
-    if (!db) return;
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { insights });
-  },
-
-  saveAchievements: async (userId: string, achievements: Record<string, number>) => {
-    if (!db) return;
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { achievements });
-  },
-  
-  saveAiAccess: async (userId: string, aiAccess: AiAccessState) => {
-    if (!db) return;
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { aiAccess });
+    // Use setDoc with merge to ensure we don't lose the document structure but overwrite content
+    await setDoc(userRef, {
+      entries: localData.entries || [],
+      tags: localData.tags || [],
+      library: localData.library || [],
+      achievements: localData.achievements || {},
+      aiAccess: localData.aiAccess || { unlocked: false, attempts: 0 }
+    }, { merge: true });
   }
 };

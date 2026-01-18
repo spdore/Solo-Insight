@@ -83,6 +83,14 @@ export const translations = {
     orgasm_yes: "Climax",
     orgasm_no: "No",
     orgasm_edging: "Edging",
+    // Deep Insights
+    di_no_data: "Not enough data yet.",
+    di_time_dist: "Active Hours",
+    di_tag_ranking: "Top Contexts",
+    di_by_intensity: "By Intensity",
+    di_stats_interval: "Avg Interval",
+    di_stats_streak: "Best Streak",
+    di_stats_edging: "Edging Rate",
     // Tags
     tag_Relaxation: "Relaxation",
     tag_Stress_Relief: "Stress Relief",
@@ -175,6 +183,14 @@ export const translations = {
     orgasm_yes: "高潮",
     orgasm_no: "无",
     orgasm_edging: "边缘控射",
+    // Deep Insights
+    di_no_data: "数据不足。",
+    di_time_dist: "活跃时段",
+    di_tag_ranking: "最佳情境",
+    di_by_intensity: "按强度排序",
+    di_stats_interval: "平均间隔",
+    di_stats_streak: "最长连胜",
+    di_stats_edging: "边缘控射率",
     // Tags
     tag_Relaxation: "放松",
     tag_Stress_Relief: "解压",

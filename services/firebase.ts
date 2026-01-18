@@ -70,41 +70,66 @@ export const FirebaseService = {
 
   // Initialize User Document if it doesn't exist
   initUserDoc: async (userId: string) => {
-    const userRef = doc(db, 'users', userId);
-    const docSnap = await getDoc(userRef);
-    
-    if (!docSnap.exists()) {
-      await setDoc(userRef, {
-        entries: [],
-        tags: [],
-        library: [],
-        insights: [],
-        achievements: {},
-        aiAccess: { unlocked: false, attempts: 0 },
-        createdAt: Date.now()
-      });
-      return true; // Created new
+    if (!userId) return false;
+    try {
+        const userRef = doc(db, 'users', userId);
+        const docSnap = await getDoc(userRef);
+        
+        if (!docSnap.exists()) {
+          await setDoc(userRef, {
+            entries: [],
+            tags: [],
+            library: [],
+            insights: [],
+            achievements: {},
+            aiAccess: { unlocked: false, attempts: 0 },
+            createdAt: Date.now()
+          });
+          return true; // Created new
+        }
+        return false; // Existed
+    } catch (error) {
+        console.error("Error initializing user doc:", error);
+        // Throw error so App.tsx can handle it and stop loading
+        throw error;
     }
-    return false; // Existed
   },
 
   // Real-time listener for user data
-  subscribeToUserData: (userId: string, callback: (data: any) => void) => {
+  subscribeToUserData: (
+      userId: string, 
+      onData: (data: any) => void, 
+      onError?: (error: any) => void
+  ) => {
     const userRef = doc(db, 'users', userId);
-    return onSnapshot(userRef, (doc) => {
-      if (doc.exists()) {
-        callback(doc.data());
+    return onSnapshot(userRef, 
+      (doc) => {
+        if (doc.exists()) {
+            onData(doc.data());
+        } else {
+            // Document might have been deleted or not created yet
+            // Pass null to indicate "no data found but sync is working"
+            onData(null); 
+        }
+      },
+      (error) => {
+        console.error("Firestore sync error:", error);
+        if (onError) onError(error);
       }
-    });
+    );
   },
 
   // Overwrite specific fields in Firestore
   updateUserField: async (userId: string, field: string, data: any) => {
     if (!userId) return;
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      [field]: data
-    });
+    try {
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, {
+        [field]: data
+        });
+    } catch (e) {
+        console.error(`Error updating field ${field}:`, e);
+    }
   },
 
   // Helper to sync all local data to cloud (e.g. after first signup)

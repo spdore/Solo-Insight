@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { StorageService } from './services/storageService';
 import { FirebaseService } from './services/firebase';
 import { Entry, ViewState, Achievement, ContentItem, Language } from './types';
@@ -29,7 +29,8 @@ import {
   Library as LibraryIcon,
   CheckCircle2,
   LogOut,
-  Loader2
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 import { format, differenceInDays, isSameDay, addMonths, isSameMonth } from 'date-fns';
 import zhCN from 'date-fns/locale/zh-CN';
@@ -42,6 +43,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const [view, setView] = useState<ViewState>('DASHBOARD');
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -59,6 +61,9 @@ export default function App() {
   
   const [selectedDay, setSelectedDay] = useState<{date: Date, entries: Entry[]} | null>(null);
 
+  // Unsubscribe ref to handle cleanup correctly
+  const unsubscribeDataRef = useRef<(() => void) | null>(null);
+
   const t = translations[lang];
   const dateLocale = lang === 'zh' ? zhCN : enUS;
 
@@ -75,40 +80,83 @@ export default function App() {
 
   // Auth Listener
   useEffect(() => {
-    const unsubscribe = FirebaseService.observeAuth(async (currentUser) => {
+    const unsubscribeAuth = FirebaseService.observeAuth(async (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
+      setSyncError(null);
       
+      // Cleanup previous data listener if exists
+      if (unsubscribeDataRef.current) {
+          unsubscribeDataRef.current();
+          unsubscribeDataRef.current = null;
+      }
+
       if (currentUser) {
-        setDataLoading(true);
-        // Initialize User Doc if not exists
-        await FirebaseService.initUserDoc(currentUser.uid);
+        // OPTIMIZATION: Check if we have synced this user on this device before.
+        // If yes, we skip the blocking loader to prevent "hanging" feeling.
+        const hasSyncedBefore = localStorage.getItem(`si_synced_${currentUser.uid}`) === 'true';
         
-        // Subscribe to real-time data
-        const unsubData = FirebaseService.subscribeToUserData(currentUser.uid, (data) => {
-            if (data) {
-                // If cloud data is empty but we have local data, consider syncing up (optional feature, here we prioritize cloud for "Login" experience)
-                // For this implementation, we allow Cloud to be the source of truth
-                setEntries(data.entries || []);
-                setTags(data.tags || StorageService.getTags());
-                setLibraryItems(data.library || []);
-                setUnlockedAchievements(data.achievements || {});
-                setAiAccess(data.aiAccess || { unlocked: false, attempts: 0 });
-                setDataLoading(false);
-            }
-        });
+        if (!hasSyncedBefore) {
+            setDataLoading(true);
+        }
         
-        return () => unsubData();
+        // Directly subscribe without awaiting initialization.
+        // Initialize only if the listener returns null (document missing).
+        try {
+            unsubscribeDataRef.current = FirebaseService.subscribeToUserData(
+                currentUser.uid, 
+                async (data) => {
+                    if (data) {
+                        // Success: Data exists
+                        setEntries(data.entries || []);
+                        setTags(data.tags || StorageService.getTags());
+                        setLibraryItems(data.library || []);
+                        setUnlockedAchievements(data.achievements || {});
+                        setAiAccess(data.aiAccess || { unlocked: false, attempts: 0 });
+                        
+                        setDataLoading(false);
+                        localStorage.setItem(`si_synced_${currentUser.uid}`, 'true');
+                    } else {
+                        // Data is null: Document doesn't exist yet (First ever login or data wiped)
+                        // Trigger initialization now
+                        console.log("No user data found, initializing...");
+                        // Ensure loader is showing for this operation
+                        setDataLoading(true); 
+                        try {
+                            await FirebaseService.initUserDoc(currentUser.uid);
+                            // initUserDoc success will trigger this listener again with data
+                        } catch (err) {
+                            console.error("Init failed:", err);
+                            setSyncError("Failed to create user profile.");
+                            setDataLoading(false);
+                        }
+                    }
+                },
+                (error) => {
+                    console.error("Sync Error:", error);
+                    setSyncError("Sync failed. Check connection.");
+                    setDataLoading(false);
+                }
+            );
+        } catch (err) {
+            console.error("Subscription setup failed:", err);
+            setDataLoading(false);
+        }
+        
       } else {
         // Clear data on logout
         setEntries([]);
+        setDataLoading(false);
       }
     });
 
     // Load Local Prefs (Language) independent of auth
     setLang(StorageService.getLanguage());
 
-    return () => unsubscribe();
+    return () => {
+        unsubscribeAuth();
+        if (unsubscribeDataRef.current) unsubscribeDataRef.current();
+    };
   }, []);
 
   const changeLanguage = (newLang: Language) => {
@@ -117,6 +165,10 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    if (user) {
+        // Optional: clear local sync flag on manual sign out if you want to force sync screen next time
+        // localStorage.removeItem(`si_synced_${user.uid}`);
+    }
     FirebaseService.signOut();
   };
 
@@ -283,6 +335,13 @@ export default function App() {
                 <LogOut size={20} />
             </button>
             <button 
+                onClick={() => setView('ACHIEVEMENTS')}
+                className="p-3 rounded-full border bg-slate-900/40 border-slate-800/50 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-all backdrop-blur-md"
+                title="Achievements"
+            >
+                <Award size={20} />
+            </button>
+            <button 
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-3 rounded-full border bg-slate-900/40 border-slate-800/50 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-all backdrop-blur-md"
             >
@@ -290,6 +349,14 @@ export default function App() {
             </button>
         </div>
       </header>
+
+      {/* Sync Error Alert */}
+      {syncError && (
+          <div className="bg-red-950/30 border border-red-900/50 p-4 rounded-2xl flex items-center gap-3 backdrop-blur-md mb-4">
+              <AlertTriangle className="text-red-400 shrink-0" size={20} />
+              <p className="text-xs text-red-200">{syncError}</p>
+          </div>
+      )}
 
       {/* Hero Stats Row */}
       <div className="grid grid-cols-2 gap-4">
@@ -534,175 +601,113 @@ export default function App() {
               )}
           </div>
       )}
-
-      {/* Renders other views based on 'view' state */}
-      {view === 'LIBRARY' && <Library items={libraryItems} onUpdate={handleUpdateLibrary} lang={lang} dateLocale={dateLocale} />}
-      {view === 'STATS' && <DeepInsights entries={entries} lang={lang} />}
-      {view === 'ACHIEVEMENTS' && renderAchievements()}
-
     </div>
   );
 
   const renderAchievements = () => (
-      <div key="ACHIEVEMENTS" className="space-y-6 animate-slide-up">
-        <h1 className="text-2xl font-bold tracking-tight text-white mb-6 pt-4">{t.milestones}</h1>
-        <div className="grid grid-cols-1 gap-4">
-            {achievementsList.map(ach => {
-                const isUnlocked = !!unlockedAchievements[ach.id];
-                return (
-                    <div key={ach.id} className={`p-5 rounded-2xl border flex items-center gap-5 transition-all relative overflow-hidden group backdrop-blur-md ${isUnlocked ? 'bg-slate-900/60 border-violet-900/50 shadow-lg shadow-violet-900/10' : 'bg-slate-900/30 border-slate-800/50 opacity-50'}`}>
-                        {isUnlocked && <div className="absolute inset-0 bg-gradient-to-r from-violet-900/10 to-transparent pointer-events-none"></div>}
-                        
-                        <div className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 border transition-colors ${isUnlocked ? 'bg-violet-950 text-violet-300 border-violet-800 shadow-[0_0_15px_rgba(139,92,246,0.3)]' : 'bg-slate-800 text-slate-600 border-slate-700'}`}>
-                            <Award size={24} />
-                        </div>
-                        <div className="relative z-10">
-                            <h3 className={`font-bold text-lg ${isUnlocked ? 'text-white' : 'text-slate-500'}`}>{ach.title}</h3>
-                            <p className="text-xs text-slate-400 leading-relaxed">{ach.description}</p>
-                            {isUnlocked && (
-                                <p className="text-[10px] text-violet-400 mt-2 uppercase font-bold tracking-wider flex items-center gap-1">
-                                    {t.unlocked} {format(new Date(unlockedAchievements[ach.id]), 'MMM d', { locale: dateLocale })}
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                )
-            })}
-        </div>
+    <div className="space-y-6 animate-slide-up pb-24">
+      <header className="flex justify-between items-center mb-6 pt-4">
+        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+            {t.nav_awards}
+            <span className="text-xs font-normal text-slate-500 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-full">
+                {Object.keys(unlockedAchievements).length}/{achievementsList.length}
+            </span>
+        </h1>
+      </header>
+
+      <div className="grid gap-3">
+        {achievementsList.map(ach => {
+           const isUnlocked = !!unlockedAchievements[ach.id];
+           return (
+             <div key={ach.id} className={`p-4 rounded-2xl border flex items-center gap-4 transition-all ${isUnlocked ? 'bg-indigo-900/20 border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'bg-slate-900/40 border-slate-800 opacity-50 grayscale'}`}>
+                <div className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-xl shadow-inner ${isUnlocked ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-orange-900/20' : 'bg-slate-800 text-slate-600'}`}>
+                    <Award size={24} />
+                </div>
+                <div>
+                   <h3 className={`font-bold text-sm ${isUnlocked ? 'text-white' : 'text-slate-400'}`}>{ach.title}</h3>
+                   <p className="text-xs text-slate-500 mt-0.5 leading-snug">{ach.description}</p>
+                   {isUnlocked && <p className="text-[10px] text-indigo-400 mt-1.5 font-medium flex items-center gap-1"><CheckCircle2 size={10}/> {t.unlocked} {format(unlockedAchievements[ach.id], 'MMM d', { locale: dateLocale })}</p>}
+                </div>
+             </div>
+           );
+        })}
       </div>
-  )
+    </div>
+  );
 
-  // --- Auth & Loading States ---
-
-  if (authLoading) {
-      return (
-          <div className="h-[100dvh] w-full flex items-center justify-center bg-slate-950">
-              <Loader2 size={48} className="text-violet-500 animate-spin" />
-          </div>
-      );
-  }
-
-  if (!user) {
-      return <AuthPage />;
-  }
+  if (authLoading) return <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-violet-500"><Loader2 size={32} className="animate-spin" /></div>;
+  if (!user) return <AuthPage />;
 
   return (
-    <div className="h-[100dvh] w-full flex justify-center bg-slate-950 relative overflow-hidden">
-        {/* Global Background Orbs - Enhanced Colors */}
-        <div className="absolute top-[-20%] left-[-20%] w-[70%] h-[70%] bg-violet-600/40 rounded-full blur-[120px] animate-blob mix-blend-screen pointer-events-none"></div>
-        <div className="absolute top-[10%] right-[-20%] w-[60%] h-[60%] bg-fuchsia-600/30 rounded-full blur-[120px] animate-blob animation-delay-2000 mix-blend-screen pointer-events-none"></div>
-        <div className="absolute bottom-[-20%] left-[10%] w-[70%] h-[70%] bg-cyan-600/30 rounded-full blur-[120px] animate-blob animation-delay-4000 mix-blend-screen pointer-events-none"></div>
-        <div className="absolute bottom-[20%] right-[10%] w-[40%] h-[40%] bg-amber-600/20 rounded-full blur-[100px] animate-blob animation-delay-3000 mix-blend-screen pointer-events-none"></div>
+    <div className="bg-slate-950 min-h-[100dvh] text-slate-200 font-sans selection:bg-violet-500/30 pb-24">
+       {/* Background Effects */}
+       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-violet-900/10 rounded-full blur-[100px]"></div>
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-fuchsia-900/10 rounded-full blur-[100px]"></div>
+       </div>
 
-        <div className="w-full max-w-md bg-slate-950/20 backdrop-blur-2xl relative overflow-hidden flex flex-col shadow-2xl h-full border-x border-white/10">
-        
-        {/* Loading Overlay for Data Fetching */}
-        {dataLoading && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md">
-                <Loader2 size={40} className="text-violet-500 animate-spin mb-4" />
-                <p className="text-slate-400 text-sm font-medium">Syncing data...</p>
-            </div>
-        )}
+       <div className="relative z-10 container mx-auto max-w-md p-4 min-h-full">
+          {view === 'DASHBOARD' && renderDashboard()}
+          {view === 'CALENDAR' && renderCalendar()}
+          {view === 'LIBRARY' && <Library items={libraryItems} onUpdate={handleUpdateLibrary} lang={lang} dateLocale={dateLocale} />}
+          {view === 'STATS' && <DeepInsights entries={entries} lang={lang} />}
+          {view === 'ACHIEVEMENTS' && renderAchievements()}
+       </div>
 
-        {/* Success Overlay Animation */}
-        {showSuccess && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300 pointer-events-none">
-                <div className="p-8 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 shadow-[0_0_50px_rgba(168,85,247,0.5)] animate-in zoom-in-50 duration-500">
-                    <CheckCircle2 size={64} className="text-white" strokeWidth={3} />
-                </div>
-                <h2 className="mt-8 text-2xl font-bold text-white tracking-tight animate-in slide-in-from-bottom-4 duration-500">{t.recorded}</h2>
-                <p className="text-slate-400 mt-2 font-medium">Saved to cloud</p>
-            </div>
-        )}
+       {/* Bottom Navigation */}
+       <nav className="fixed bottom-0 left-0 right-0 bg-[#0B0F19]/90 backdrop-blur-xl border-t border-slate-800/50 pb-safe pt-2 px-4 flex justify-around items-center z-40 h-20 max-w-md mx-auto">
+          <button onClick={() => setView('DASHBOARD')} className={`flex flex-col items-center p-2 transition-colors ${view === 'DASHBOARD' ? 'text-violet-400' : 'text-slate-500 hover:text-slate-300'}`}>
+            <Activity size={20} />
+            <span className="text-[9px] font-bold uppercase mt-1">{t.nav_today}</span>
+          </button>
+          
+          <button onClick={() => setView('CALENDAR')} className={`flex flex-col items-center p-2 transition-colors ${view === 'CALENDAR' ? 'text-violet-400' : 'text-slate-500 hover:text-slate-300'}`}>
+            <CalendarIcon size={20} />
+            <span className="text-[9px] font-bold uppercase mt-1">{t.nav_history}</span>
+          </button>
 
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto no-scrollbar p-6 pb-24 relative z-10">
-            {view === 'DASHBOARD' && renderDashboard()}
-            {view === 'CALENDAR' && renderCalendar()}
-            {view === 'LIBRARY' && <Library items={libraryItems} onUpdate={handleUpdateLibrary} lang={lang} dateLocale={dateLocale} />}
-            {view === 'STATS' && <DeepInsights entries={entries} lang={lang} />}
-            {view === 'ACHIEVEMENTS' && renderAchievements()}
-        </main>
+          <button 
+              onClick={() => setIsLogModalOpen(true)}
+              className="mb-8 w-14 h-14 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white flex items-center justify-center shadow-[0_0_20px_rgba(124,58,237,0.4)] border border-white/10 hover:scale-105 transition-transform active:scale-95"
+          >
+              <Plus size={28} />
+          </button>
 
-        {/* Floating Action Button - ONLY VISIBLE IN DASHBOARD */}
-        {view === 'DASHBOARD' && (
-            <div className="absolute bottom-24 right-6 z-30">
-                <button 
-                onClick={() => setIsLogModalOpen(true)}
-                className="w-16 h-16 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-full shadow-[0_4px_20px_rgba(124,58,237,0.4)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-all border border-violet-400/30 group"
-                >
-                <Plus size={32} className="group-hover:rotate-90 transition-transform duration-300" />
-                </button>
-            </div>
-        )}
+           <button onClick={() => setView('STATS')} className={`flex flex-col items-center p-2 transition-colors ${view === 'STATS' ? 'text-violet-400' : 'text-slate-500 hover:text-slate-300'}`}>
+            <BarChart2 size={20} />
+            <span className="text-[9px] font-bold uppercase mt-1">{t.nav_insights}</span>
+          </button>
 
-        {/* Bottom Navigation */}
-        <nav className="absolute bottom-0 left-0 right-0 bg-slate-950/60 backdrop-blur-xl border-t border-white/10 px-6 py-4 z-20 grid grid-cols-5 items-center text-xs font-medium">
-            <button 
-                onClick={() => { setView('DASHBOARD'); setSelectedDay(null); }}
-                className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${view === 'DASHBOARD' ? 'text-white scale-105' : 'text-slate-500 hover:text-slate-400'}`}
-            >
-            <History size={20} strokeWidth={view === 'DASHBOARD' ? 2.5 : 2} className={view === 'DASHBOARD' ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''}/>
-            <span className={view === 'DASHBOARD' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}>{t.nav_today}</span>
-            </button>
-            <button 
-                onClick={() => { setView('CALENDAR'); setSelectedDay(null); }}
-                className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${view === 'CALENDAR' ? 'text-white scale-105' : 'text-slate-500 hover:text-slate-400'}`}
-            >
-            <CalendarIcon size={20} strokeWidth={view === 'CALENDAR' ? 2.5 : 2} className={view === 'CALENDAR' ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''}/>
-            <span className={view === 'CALENDAR' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}>{t.nav_history}</span>
-            </button>
-            <button 
-                onClick={() => { setView('LIBRARY'); setSelectedDay(null); }}
-                className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${view === 'LIBRARY' ? 'text-white scale-105' : 'text-slate-500 hover:text-slate-400'}`}
-            >
-            <LibraryIcon size={20} strokeWidth={view === 'LIBRARY' ? 2.5 : 2} className={view === 'LIBRARY' ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''}/>
-            <span className={view === 'LIBRARY' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}>{t.nav_lib}</span>
-            </button>
-            <button 
-                onClick={() => { setView('STATS'); setSelectedDay(null); }}
-                className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${view === 'STATS' ? 'text-white scale-105' : 'text-slate-500 hover:text-slate-400'}`}
-            >
-            <BarChart2 size={20} strokeWidth={view === 'STATS' ? 2.5 : 2} className={view === 'STATS' ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''}/>
-            <span className={view === 'STATS' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}>{t.nav_insights}</span>
-            </button>
-            <button 
-                onClick={() => { setView('ACHIEVEMENTS'); setSelectedDay(null); }}
-                className={`flex flex-col items-center gap-1.5 transition-all duration-300 ${view === 'ACHIEVEMENTS' ? 'text-white scale-105' : 'text-slate-500 hover:text-slate-400'}`}
-            >
-            <Award size={20} strokeWidth={view === 'ACHIEVEMENTS' ? 2.5 : 2} className={view === 'ACHIEVEMENTS' ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''}/>
-            <span className={view === 'ACHIEVEMENTS' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}>{t.nav_awards}</span>
-            </button>
-        </nav>
+           <button onClick={() => setView('LIBRARY')} className={`flex flex-col items-center p-2 transition-colors ${view === 'LIBRARY' ? 'text-violet-400' : 'text-slate-500 hover:text-slate-300'}`}>
+            <LibraryIcon size={20} />
+            <span className="text-[9px] font-bold uppercase mt-1">{t.nav_lib}</span>
+          </button>
+       </nav>
 
-        {/* Modals */}
-        <LogModal 
-            isOpen={isLogModalOpen} 
-            onClose={() => setIsLogModalOpen(false)}
-            onSave={handleSaveEntry}
-            allTags={tags}
-            onAddTag={handleAddTag}
-            lang={lang}
-        />
-        <SettingsModal 
-            isOpen={isSettingsOpen} 
-            onClose={() => setIsSettingsOpen(false)} 
-            onDataChange={() => {}} // Local restore not needed in cloud mode
-            currentLang={lang}
-            onLangChange={changeLanguage}
-        />
-        <AiLockModal 
-            isOpen={false} // Currently disabled/hidden as logic moved to legacy or not used
-            onClose={() => {}} 
-            onSuccess={() => {}}
-            accessState={aiAccess}
-            onUpdateState={(newState) => {
-                setAiAccess(newState);
-                if(user) FirebaseService.updateUserField(user.uid, 'aiAccess', newState);
-            }}
-            lang={lang}
-        />
-        </div>
+       {/* Modals */}
+       <LogModal 
+          isOpen={isLogModalOpen} 
+          onClose={() => setIsLogModalOpen(false)} 
+          onSave={handleSaveEntry}
+          allTags={tags}
+          onAddTag={handleAddTag}
+          lang={lang}
+       />
+       
+       <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          onDataChange={() => {
+              setEntries(StorageService.getEntries());
+              setTags(StorageService.getTags());
+              setUnlockedAchievements(StorageService.getUnlockedAchievements());
+              // Force reload
+              window.location.reload();
+          }}
+          currentLang={lang}
+          onLangChange={changeLanguage}
+       />
+
     </div>
   );
 }

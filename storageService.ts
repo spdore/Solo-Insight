@@ -1,4 +1,4 @@
-import { Entry, Tag, Achievement, SavedInsight, ContentItem, AiAccessState, Language } from './types';
+import { Entry, Tag, Achievement, SavedInsight, ContentItem, AiAccessState, Language } from '../types';
 
 const KEYS = {
   ENTRIES: 'solo_insight_entries',

@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
-import { X, Download, Trash2, Upload, Globe } from 'lucide-react';
+import { X, Download, Trash2, Upload, Award } from 'lucide-react';
 import { StorageService } from '../services/storageService';
-import { Language } from '../types';
+import { Language, Achievement } from '../services/types';
 import { translations } from '../utils/translations';
+import { format } from 'date-fns';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,9 +11,21 @@ interface SettingsModalProps {
   onDataChange: () => void;
   currentLang: Language;
   onLangChange: (lang: Language) => void;
+  achievementsList: Achievement[];
+  unlockedAchievements: Record<string, number>;
+  dateLocale: any;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onDataChange, currentLang, onLangChange }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onDataChange, 
+  currentLang, 
+  onLangChange,
+  achievementsList,
+  unlockedAchievements,
+  dateLocale
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[currentLang];
 
@@ -86,8 +99,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
           </button>
         </div>
 
-        <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+        <div className="p-6 space-y-8 max-h-[80vh] overflow-y-auto no-scrollbar">
           
+          {/* Achievements Section */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex justify-between items-center">
+                {t.nav_awards}
+                <span className="text-[10px] font-normal text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">
+                    {Object.keys(unlockedAchievements).length}/{achievementsList.length}
+                </span>
+            </h3>
+            
+            <div className="space-y-3">
+                {achievementsList.map(ach => {
+                    const isUnlocked = !!unlockedAchievements[ach.id];
+                    return (
+                        <div key={ach.id} className={`p-4 rounded-xl border flex items-center gap-4 relative overflow-hidden ${isUnlocked ? 'bg-slate-800/50 border-violet-900/40' : 'bg-slate-900 border-slate-800 opacity-60'}`}>
+                             {isUnlocked && <div className="absolute inset-0 bg-gradient-to-r from-violet-900/10 to-transparent pointer-events-none"></div>}
+                             
+                             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${isUnlocked ? 'bg-violet-950 text-violet-300 border-violet-800' : 'bg-slate-800 text-slate-600 border-slate-700'}`}>
+                                <Award size={18} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-center">
+                                    <h4 className={`text-sm font-bold ${isUnlocked ? 'text-white' : 'text-slate-500'}`}>{ach.title}</h4>
+                                    {isUnlocked && <span className="text-[10px] text-violet-400 font-medium">{format(new Date(unlockedAchievements[ach.id]), 'MM/dd')}</span>}
+                                </div>
+                                <p className="text-[10px] text-slate-400 leading-tight mt-0.5">{ach.description}</p>
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+          </div>
+
+          <div className="h-px bg-slate-800 w-full" />
+
+          {/* Language Section */}
           <div className="space-y-3">
              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t.language}</h3>
              <div className="flex gap-2">
@@ -106,9 +154,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
              </div>
           </div>
 
+          {/* Data Section */}
           <div className="space-y-3">
              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t.backup_restore}</h3>
-             <p className="text-[10px] text-slate-400 mb-2">Since this app is offline, manual backups are the only way to save your data outside this device.</p>
+             <p className="text-[10px] text-slate-400 mb-2">Manual backups are the only way to save your data outside this device.</p>
              
              <div className="grid grid-cols-2 gap-3">
                  <button 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, Unlock, X, ShieldAlert } from 'lucide-react';
 import { StorageService } from '../services/storageService';
-import { AiAccessState, Language } from '../types';
+import { AiAccessState, Language } from '../services/types';
 import { translations } from '../utils/translations';
 
 interface AiLockModalProps {

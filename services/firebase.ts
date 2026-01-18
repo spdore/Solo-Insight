@@ -1,14 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInAnonymously,
   signOut as firebaseSignOut, 
   onAuthStateChanged, 
-  User,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signInAnonymously as firebaseSignInAnonymously
+  User 
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -18,9 +18,9 @@ import {
   updateDoc, 
   onSnapshot 
 } from 'firebase/firestore';
-import { Entry, ContentItem, SavedInsight, AiAccessState } from '../types';
+import { StorageService } from './storageService';
+import { Entry, ContentItem, SavedInsight, AiAccessState } from './types';
 
-// Updated configuration
 const firebaseConfig = {
   apiKey: "AIzaSyATLYZAbzFnwry9BLV9zEnbs8ZlXl790OU",
   authDomain: "soloinsightv1.firebaseapp.com",
@@ -32,116 +32,95 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const googleProvider = new GoogleAuthProvider();
+export const auth = getAuth(app);
+export const db = getFirestore(app);
 
 export const FirebaseService = {
   auth,
   db,
-
-  // --- Auth Methods ---
   
-  signUp: async (email, password) => {
-    return createUserWithEmailAndPassword(auth, email, password);
+  // Auth Methods
+  signInGoogle: async () => {
+    const provider = new GoogleAuthProvider();
+    return signInWithPopup(auth, provider);
   },
 
-  signIn: async (email, password) => {
-    return signInWithEmailAndPassword(auth, email, password);
+  signInEmail: async (email: string, pass: string) => {
+    return signInWithEmailAndPassword(auth, email, pass);
   },
 
-  signInWithGoogle: async () => {
-    return signInWithPopup(auth, googleProvider);
+  signUpEmail: async (email: string, pass: string) => {
+    return createUserWithEmailAndPassword(auth, email, pass);
   },
 
-  signInAnonymously: async () => {
-    return firebaseSignInAnonymously(auth);
+  signInAnon: async () => {
+    return signInAnonymously(auth);
   },
 
   signOut: async () => {
     return firebaseSignOut(auth);
   },
 
-  observeAuth: (callback: (user: User | null) => void) => {
-    return onAuthStateChanged(auth, callback);
-  },
+  // Data Sync: Merges LocalStorage data into Firestore upon login
+  syncLocalDataToCloud: async (user: User) => {
+    const localData = StorageService.getFullBackupData();
+    const userRef = doc(db, 'users', user.uid);
+    const docSnap = await getDoc(userRef);
 
-  // --- Data Sync Methods ---
+    if (!docSnap.exists()) {
+      // New cloud user: Upload local data immediately
+      await setDoc(userRef, {
+        entries: localData.entries || [],
+        tags: localData.tags || [],
+        library: localData.library || [],
+        achievements: localData.achievements || {},
+        aiAccess: localData.aiAccess || { unlocked: false, attempts: 0 },
+        language: localData.language || 'en',
+        createdAt: Date.now()
+      });
+    } else {
+      // Existing cloud user: Intelligent Merge
+      const cloudData = docSnap.data();
+      
+      // Merge Entries (Avoid duplicates by ID)
+      const cloudEntryIds = new Set((cloudData.entries || []).map((e: any) => e.id));
+      const newLocalEntries = localData.entries.filter(e => !cloudEntryIds.has(e.id));
+      const mergedEntries = [...(cloudData.entries || []), ...newLocalEntries];
 
-  // Initialize User Document if it doesn't exist
-  initUserDoc: async (userId: string) => {
-    if (!userId) return false;
-    try {
-        const userRef = doc(db, 'users', userId);
-        const docSnap = await getDoc(userRef);
-        
-        if (!docSnap.exists()) {
-          await setDoc(userRef, {
-            entries: [],
-            tags: [],
-            library: [],
-            insights: [],
-            achievements: {},
-            aiAccess: { unlocked: false, attempts: 0 },
-            createdAt: Date.now()
-          });
-          return true; // Created new
-        }
-        return false; // Existed
-    } catch (error) {
-        console.error("Error initializing user doc:", error);
-        // Throw error so App.tsx can handle it and stop loading
-        throw error;
-    }
-  },
+      // Merge Library
+      const cloudLibIds = new Set((cloudData.library || []).map((i: any) => i.id));
+      const newLocalLib = localData.library.filter(i => !cloudLibIds.has(i.id));
+      const mergedLibrary = [...(cloudData.library || []), ...newLocalLib];
+      
+      // Merge Tags (Unique)
+      const mergedTags = Array.from(new Set([...(cloudData.tags || []), ...localData.tags]));
 
-  // Real-time listener for user data
-  subscribeToUserData: (
-      userId: string, 
-      onData: (data: any) => void, 
-      onError?: (error: any) => void
-  ) => {
-    const userRef = doc(db, 'users', userId);
-    return onSnapshot(userRef, 
-      (doc) => {
-        if (doc.exists()) {
-            onData(doc.data());
-        } else {
-            // Document might have been deleted or not created yet
-            // Pass null to indicate "no data found but sync is working"
-            onData(null); 
-        }
-      },
-      (error) => {
-        console.error("Firestore sync error:", error);
-        if (onError) onError(error);
-      }
-    );
-  },
-
-  // Overwrite specific fields in Firestore
-  updateUserField: async (userId: string, field: string, data: any) => {
-    if (!userId) return;
-    try {
-        const userRef = doc(db, 'users', userId);
+      // Update Cloud
+      if (newLocalEntries.length > 0 || newLocalLib.length > 0) {
         await updateDoc(userRef, {
-        [field]: data
+          entries: mergedEntries,
+          library: mergedLibrary,
+          tags: mergedTags
         });
-    } catch (e) {
-        console.error(`Error updating field ${field}:`, e);
+      }
     }
   },
 
-  // Helper to sync all local data to cloud (e.g. after first signup)
-  syncLocalToCloud: async (userId: string, localData: any) => {
+  // Real-time Listeners
+  subscribeToUserData: (userId: string, callback: (data: any) => void) => {
+    return onSnapshot(doc(db, 'users', userId), (doc) => {
+      if (doc.exists()) {
+        callback(doc.data());
+      } else {
+        // Initialize empty if not exists (handling edge case)
+        callback(null);
+      }
+    });
+  },
+
+  // Save methods (used when user is online)
+  updateUserData: async (userId: string, data: any) => {
     const userRef = doc(db, 'users', userId);
-    // Use setDoc with merge to ensure we don't lose the document structure but overwrite content
-    await setDoc(userRef, {
-      entries: localData.entries || [],
-      tags: localData.tags || [],
-      library: localData.library || [],
-      achievements: localData.achievements || {},
-      aiAccess: localData.aiAccess || { unlocked: false, attempts: 0 }
-    }, { merge: true });
+    await updateDoc(userRef, data);
   }
 };

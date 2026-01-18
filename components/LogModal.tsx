@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Entry, OrgasmType, Language } from '../types';
+import { Entry, OrgasmType, Language } from '../services/types';
 import { X, Clock, Play, Pause, Save, RotateCcw, Zap, Link as LinkIcon, User, Archive, ChevronLeft, ArrowRight, Check, Calendar, Square } from 'lucide-react';
 import { format } from 'date-fns';
 import { StorageService } from '../services/storageService';

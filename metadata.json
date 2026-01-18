@@ -1,7 +1,4 @@
 {
   "name": "Solo Insight",
   "description": "A neutral, privacy-focused tracker for personal intimate habits and insights.",
-  "requestFramePermissions": [
-    "camera"
-  ]
 }

@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { Entry } from "../types";
+import { Entry } from "./types";
 
 const getClient = () => {
     // Only initialize if key exists to prevent crashes in environments without keys

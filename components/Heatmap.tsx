@@ -1,7 +1,7 @@
 import React from 'react';
 import { endOfMonth, eachDayOfInterval, getDay, format, isSameDay } from 'date-fns';
 import startOfMonth from 'date-fns/startOfMonth';
-import { Entry } from '../types';
+import { Entry } from '../services/types';
 
 interface HeatmapProps {
   entries: Entry[];

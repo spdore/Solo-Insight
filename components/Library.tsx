@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { ContentItem, Language } from '../types';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import { ContentItem, Language } from '../services/types';
 import { StorageService } from '../services/storageService';
-import { Search, Plus, Star, Link as LinkIcon, User, Trash2, ExternalLink, Copy, X, Save, FileText, Pencil, Play } from 'lucide-react';
+import { Search, Plus, Star, Link as LinkIcon, User, ExternalLink, X, Save, FileText, Pencil, Play } from 'lucide-react';
 import { format } from 'date-fns';
 import { translations } from '../utils/translations';
 import { SwipeableEntry } from './SwipeableEntry';
@@ -13,7 +13,11 @@ interface LibraryProps {
   dateLocale?: any;
 }
 
-export const Library: React.FC<LibraryProps> = ({ items, onUpdate, lang, dateLocale }) => {
+export interface LibraryRef {
+    openAddModal: () => void;
+}
+
+export const Library = forwardRef<LibraryRef, LibraryProps>(({ items, onUpdate, lang, dateLocale }, ref) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ContentItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,6 +29,12 @@ export const Library: React.FC<LibraryProps> = ({ items, onUpdate, lang, dateLoc
   const [newTitle, setNewTitle] = useState('');
 
   const t = translations[lang];
+
+  useImperativeHandle(ref, () => ({
+    openAddModal: () => {
+        openAddModal();
+    }
+  }));
 
   const handleSaveItem = () => {
     if (!newUrl && !newActor && !newTitle) return; // Need at least one
@@ -112,18 +122,13 @@ export const Library: React.FC<LibraryProps> = ({ items, onUpdate, lang, dateLoc
 
   return (
     <>
-      <div className="space-y-6 animate-slide-up">
+      <div className="space-y-6 animate-slide-up pb-24">
          <header className="flex justify-between items-center mb-4 pt-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">{t.library_title}</h1>
             <p className="text-slate-400 text-sm font-medium">{t.library_subtitle}</p>
           </div>
-          <button 
-              onClick={openAddModal}
-              className="p-3 rounded-full border transition-all bg-violet-600 text-white border-violet-500 shadow-[0_0_15px_rgba(124,58,237,0.4)] hover:scale-105 active:scale-95"
-          >
-              <Plus size={20} />
-          </button>
+          {/* Add button removed from here, moved to central FAB */}
         </header>
 
         {/* Search & Filter */}
@@ -303,4 +308,4 @@ export const Library: React.FC<LibraryProps> = ({ items, onUpdate, lang, dateLoc
       )}
     </>
   );
-};
+});
